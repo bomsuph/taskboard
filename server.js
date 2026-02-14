@@ -17,9 +17,12 @@ const DB_FILE = path.join(__dirname, 'data.json');
 
 function loadData() {
   if (!fs.existsSync(DB_FILE)) {
-    return { tasks: [], activity: [] };
+    return { tasks: [], activity: [], archived: [], comments: [] };
   }
-  return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  if (!data.archived) data.archived = [];
+  if (!data.comments) data.comments = [];
+  return data;
 }
 
 function saveData(data) {
@@ -37,9 +40,17 @@ app.get('/api/tasks', (req, res) => {
   if (project) tasks = tasks.filter(t => t.project === project);
   if (status) tasks = tasks.filter(t => t.status === status);
   
-  // Sort by priority then updated
+  // Sort: overdue first, then by priority, then by updated
   const priorityOrder = { urgent: 1, high: 2, normal: 3, low: 4 };
+  const now = new Date();
+  now.setHours(0,0,0,0);
+  
   tasks.sort((a, b) => {
+    // Overdue tasks first
+    const aOverdue = a.due_date && new Date(a.due_date) < now ? 0 : 1;
+    const bOverdue = b.due_date && new Date(b.due_date) < now ? 0 : 1;
+    if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+    
     const pa = priorityOrder[a.priority] || 3;
     const pb = priorityOrder[b.priority] || 3;
     if (pa !== pb) return pa - pb;
@@ -56,7 +67,8 @@ app.get('/api/tasks/:id', (req, res) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   
   const activity = data.activity.filter(a => a.task_id === req.params.id);
-  res.json({ ...task, activity });
+  const comments = (data.comments || []).filter(c => c.task_id === req.params.id);
+  res.json({ ...task, activity, comments });
 });
 
 // Create task
@@ -119,6 +131,18 @@ app.patch('/api/tasks/:id', (req, res) => {
     });
   }
   
+  // Track due_date change
+  if (updates.due_date !== undefined && updates.due_date !== task.due_date) {
+    data.activity.push({
+      id: Date.now() + 1,
+      task_id: task.id,
+      action: 'updated',
+      by: updates.updated_by || 'system',
+      note: updates.due_date ? `Due date set to ${updates.due_date}` : 'Due date removed',
+      created_at: now
+    });
+  }
+  
   // Apply updates
   Object.assign(task, updates, { updated_at: now });
   data.tasks[taskIndex] = task;
@@ -127,16 +151,122 @@ app.patch('/api/tasks/:id', (req, res) => {
   res.json(task);
 });
 
-// Delete task
-app.delete('/api/tasks/:id', (req, res) => {
+// Archive task (soft delete)
+app.patch('/api/tasks/:id/archive', (req, res) => {
   const data = loadData();
   const index = data.tasks.findIndex(t => t.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Task not found' });
   
-  data.tasks.splice(index, 1);
-  data.activity = data.activity.filter(a => a.task_id !== req.params.id);
-  saveData(data);
+  const task = data.tasks.splice(index, 1)[0];
+  const now = new Date().toISOString();
+  task.archived_at = now;
+  task.updated_at = now;
+  data.archived.push(task);
   
+  data.activity.push({
+    id: Date.now(),
+    task_id: task.id,
+    action: 'archived',
+    by: req.body?.by || 'system',
+    note: 'Task archived',
+    created_at: now
+  });
+  
+  saveData(data);
+  res.json(task);
+});
+
+// Restore task from archive
+app.post('/api/tasks/:id/restore', (req, res) => {
+  const data = loadData();
+  const index = data.archived.findIndex(t => t.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Archived task not found' });
+  
+  const task = data.archived.splice(index, 1)[0];
+  const now = new Date().toISOString();
+  delete task.archived_at;
+  task.updated_at = now;
+  data.tasks.push(task);
+  
+  data.activity.push({
+    id: Date.now(),
+    task_id: task.id,
+    action: 'restored',
+    by: req.body?.by || 'system',
+    note: 'Task restored from archive',
+    created_at: now
+  });
+  
+  saveData(data);
+  res.json(task);
+});
+
+// Get archived tasks
+app.get('/api/archived', (req, res) => {
+  const data = loadData();
+  res.json(data.archived || []);
+});
+
+// Add comment to task
+app.post('/api/tasks/:id/comments', (req, res) => {
+  const data = loadData();
+  const task = data.tasks.find(t => t.id === req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  
+  const { text, by = 'bom' } = req.body;
+  if (!text) return res.status(400).json({ error: 'Comment text is required' });
+  
+  const now = new Date().toISOString();
+  const comment = {
+    id: uuidv4(),
+    task_id: req.params.id,
+    text,
+    by,
+    created_at: now
+  };
+  
+  if (!data.comments) data.comments = [];
+  data.comments.push(comment);
+  
+  data.activity.push({
+    id: Date.now(),
+    task_id: req.params.id,
+    action: 'commented',
+    by,
+    note: `Comment: ${text.slice(0, 100)}`,
+    created_at: now
+  });
+  
+  saveData(data);
+  res.status(201).json(comment);
+});
+
+// Get comments for task
+app.get('/api/tasks/:id/comments', (req, res) => {
+  const data = loadData();
+  const comments = (data.comments || []).filter(c => c.task_id === req.params.id);
+  res.json(comments);
+});
+
+// Delete task permanently (from archive)
+app.delete('/api/tasks/:id', (req, res) => {
+  const data = loadData();
+  // Check active tasks first
+  let index = data.tasks.findIndex(t => t.id === req.params.id);
+  if (index !== -1) {
+    data.tasks.splice(index, 1);
+  } else {
+    // Check archived
+    index = data.archived.findIndex(t => t.id === req.params.id);
+    if (index !== -1) {
+      data.archived.splice(index, 1);
+    } else {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+  }
+  data.activity = data.activity.filter(a => a.task_id !== req.params.id);
+  data.comments = (data.comments || []).filter(c => c.task_id !== req.params.id);
+  saveData(data);
   res.json({ success: true });
 });
 
@@ -149,7 +279,8 @@ app.get('/api/stats', (req, res) => {
     todo: data.tasks.filter(t => t.status === 'todo').length,
     in_progress: data.tasks.filter(t => t.status === 'in-progress').length,
     review: data.tasks.filter(t => t.status === 'review').length,
-    done: data.tasks.filter(t => t.status === 'done').length
+    done: data.tasks.filter(t => t.status === 'done').length,
+    archived: (data.archived || []).length
   };
   res.json(stats);
 });
@@ -177,7 +308,6 @@ app.get('/api/team', async (req, res) => {
       }
     } catch (e) { /* ignore */ }
     
-    // Check if gateway is running by trying to connect
     try {
       const { execSync } = require('child_process');
       const listening = execSync(`ss -tlnp 2>/dev/null | grep ':${inst.port} '`, { encoding: 'utf8', timeout: 2000 });
@@ -186,7 +316,6 @@ app.get('/api/team', async (req, res) => {
       info.status = 'offline';
     }
     
-    // Check runtime model override (Alice only - from openclaw.json)
     if (inst.name === 'Alice') {
       try {
         const runtimeConfig = JSON.parse(fs.readFileSync('/home/clawdbot/.openclaw/openclaw.json', 'utf8'));
@@ -219,7 +348,6 @@ app.get('/api/brain/documents', (req, res) => {
       } else if (entry.name.endsWith('.md')) {
         try {
           const content = fs.readFileSync(path.join(dir, entry.name), 'utf8');
-          // Parse frontmatter
           const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
           let meta = {};
           if (fmMatch) {
