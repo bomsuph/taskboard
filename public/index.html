@@ -230,6 +230,61 @@
     .archive-info { flex: 1; }
     .archive-title { font-weight: 500; font-size: 14px; margin-bottom: 4px; }
     .archive-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; }
+
+    .quick-add-btn {
+      width: 100%; background: transparent; border: 1px dashed var(--border);
+      color: var(--text-muted); padding: 10px; border-radius: 8px; cursor: pointer;
+      font-size: 13px; font-family: inherit; transition: all 0.2s; margin-top: 4px;
+    }
+    .quick-add-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(124,111,247,0.05); }
+    .quick-add-form {
+      background: var(--bg); border: 1px solid var(--accent); border-radius: 8px;
+      padding: 12px; margin-top: 4px;
+    }
+    .quick-add-form input {
+      width: 100%; background: var(--bg-hover); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 13px;
+      font-family: inherit; margin-bottom: 8px;
+    }
+    .quick-add-form input:focus { outline: none; border-color: var(--accent); }
+    .quick-add-row { display: flex; gap: 8px; align-items: center; }
+    .quick-add-row select {
+      background: var(--bg-hover); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 8px; border-radius: 6px; font-size: 12px; font-family: inherit;
+    }
+    .quick-add-row select:focus { outline: none; border-color: var(--accent); }
+    .quick-add-hint { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+    /* Search bar */
+    .search-bar {
+      display: flex; align-items: center; position: relative;
+    }
+    .search-bar input {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 32px 8px 36px; border-radius: 8px; font-size: 14px;
+      font-family: inherit; width: 240px; transition: all 0.2s;
+    }
+    .search-bar input:focus { outline: none; border-color: var(--accent); width: 300px; }
+    .search-bar input::placeholder { color: var(--text-muted); }
+    .search-icon {
+      position: absolute; left: 10px; color: var(--text-muted); font-size: 14px;
+      pointer-events: none;
+    }
+    .search-clear {
+      position: absolute; right: 8px; background: none; border: none;
+      color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 2px 4px;
+      border-radius: 4px; line-height: 1;
+    }
+    .search-clear:hover { color: var(--text); background: var(--bg-hover); }
+    .search-kbd {
+      position: absolute; right: 8px; background: var(--bg-hover); color: var(--text-muted);
+      font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border);
+      pointer-events: none; font-family: monospace;
+    }
+    .search-results {
+      font-size: 12px; color: var(--text-muted); margin-left: 8px; white-space: nowrap;
+    }
+    .task-card.search-hidden { display: none; }
   </style>
 </head>
 <body>
@@ -633,6 +688,35 @@
       );
     }
     
+    function QuickAddForm({ status, onSave, onCancel }) {
+      const [title, setTitle] = useState('');
+      const [priority, setPriority] = useState('normal');
+      const inputRef = useRef(null);
+      useEffect(() => { inputRef.current?.focus(); }, []);
+      const handleSubmit = async () => {
+        if (!title.trim()) return;
+        await onSave({ title: title.trim(), priority, status, project: 'general', assignee: 'bom' });
+        setTitle(''); setPriority('normal');
+      };
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); }
+        if (e.key === 'Escape') onCancel();
+      };
+      return (
+        <div className="quick-add-form">
+          <input ref={inputRef} placeholder="Task title..." value={title}
+            onChange={e => setTitle(e.target.value)} onKeyDown={handleKeyDown} />
+          <div className="quick-add-row">
+            <select value={priority} onChange={e => setPriority(e.target.value)}>
+              {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button className="btn btn-sm" onClick={handleSubmit}>Add</button>
+            <span className="quick-add-hint">↵ save · esc cancel</span>
+          </div>
+        </div>
+      );
+    }
+    
     function App() {
       const [tasks, setTasks] = useState([]);
       const [stats, setStats] = useState({});
@@ -642,6 +726,9 @@
       const [draggingTask, setDraggingTask] = useState(null);
       const [filter, setFilter] = useState('all');
       const [view, setView] = useState('board');
+      const [quickAddColumn, setQuickAddColumn] = useState(null);
+      const [searchQuery, setSearchQuery] = useState('');
+      const searchRef = useRef(null);
       
       const fetchData = useCallback(async () => {
         try {
@@ -656,6 +743,21 @@
       }, []);
       
       useEffect(() => { fetchData(); }, [fetchData]);
+      
+      useEffect(() => {
+        const handler = (e) => {
+          if (e.key === '/' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
+            e.preventDefault();
+            searchRef.current?.focus();
+          }
+          if (e.key === 'Escape' && searchRef.current === document.activeElement) {
+            setSearchQuery('');
+            searchRef.current.blur();
+          }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+      }, []);
       
       const handleDragStart = (e, task) => {
         setDraggingTask(task);
@@ -689,7 +791,16 @@
         await fetchData();
       };
       
-      const filteredTasks = filter === 'all' ? tasks : tasks.filter(t => t.project === filter);
+      const projectFiltered = filter === 'all' ? tasks : tasks.filter(t => t.project === filter);
+      const query = searchQuery.toLowerCase().trim();
+      const filteredTasks = query
+        ? projectFiltered.filter(t =>
+            (t.title || '').toLowerCase().includes(query) ||
+            (t.description || '').toLowerCase().includes(query) ||
+            (t.project || '').toLowerCase().includes(query) ||
+            (t.assignee || '').toLowerCase().includes(query)
+          )
+        : projectFiltered;
       const tasksByColumn = COLUMNS.reduce((acc, col) => {
         acc[col.id] = filteredTasks.filter(t => t.status === col.id);
         return acc;
@@ -735,7 +846,24 @@
                   }}>{tab.label}</button>
                 ))}
               </div>
-              {view === 'board' && <button className="btn" onClick={() => { setEditingTask(null); setModalOpen(true); }}>+ New Task</button>}
+              {view === 'board' && <>
+                <div className="search-bar">
+                  <span className="search-icon">🔍</span>
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    placeholder="Search tasks..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery
+                    ? <button className="search-clear" onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}>✕</button>
+                    : <span className="search-kbd">/</span>
+                  }
+                </div>
+                {query && <span className="search-results">{filteredTasks.length} result{filteredTasks.length !== 1 ? 's' : ''}</span>}
+                <button className="btn" onClick={() => { setEditingTask(null); setModalOpen(true); }}>+ New Task</button>
+              </>}
             </div>
           </header>
           
