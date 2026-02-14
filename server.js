@@ -154,6 +154,111 @@ app.get('/api/stats', (req, res) => {
   res.json(stats);
 });
 
+// Team status endpoint
+app.get('/api/team', async (req, res) => {
+  const instances = [
+    { name: 'Alice', configDir: '/home/clawdbot/.clawdbot', workspace: '/home/clawdbot/clawd', port: 18789, emoji: '✨' },
+    { name: 'Cloud', configDir: '/home/clawdbot/.clawdbot-cloud', workspace: '/home/clawdbot/cloud', port: 18790, emoji: '☁️' },
+    { name: 'Tifa', configDir: '/home/clawdbot/.clawdbot-tifa', workspace: '/home/clawdbot/tifa', port: 18794, emoji: '⚔️' },
+    { name: 'Yuna', configDir: '/home/clawdbot/.clawdbot-yuna', workspace: '/home/clawdbot/yuna', port: 18795, emoji: '🌙' }
+  ];
+  
+  const team = [];
+  for (const inst of instances) {
+    const info = { name: inst.name, emoji: inst.emoji, port: inst.port, status: 'unknown', model: '?', fallbacks: [], workspace: inst.workspace };
+    try {
+      const configPath = path.join(inst.configDir, 'clawdbot.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const model = config?.agents?.defaults?.model || {};
+        info.model = model.primary || '?';
+        info.fallbacks = model.fallbacks || [];
+        info.cronModel = config?.cron?.model || 'default';
+      }
+    } catch (e) { /* ignore */ }
+    
+    // Check if gateway is running by trying to connect
+    try {
+      const { execSync } = require('child_process');
+      const listening = execSync(`ss -tlnp 2>/dev/null | grep ':${inst.port} '`, { encoding: 'utf8', timeout: 2000 });
+      info.status = listening.trim() ? 'online' : 'offline';
+    } catch (e) {
+      info.status = 'offline';
+    }
+    
+    // Check runtime model override (Alice only - from openclaw.json)
+    if (inst.name === 'Alice') {
+      try {
+        const runtimeConfig = JSON.parse(fs.readFileSync('/home/clawdbot/.openclaw/openclaw.json', 'utf8'));
+        const runtimeModel = runtimeConfig?.agents?.defaults?.model;
+        if (runtimeModel?.primary) {
+          info.model = runtimeModel.primary;
+          info.fallbacks = runtimeModel.fallbacks || info.fallbacks;
+          info.runtimeOverride = true;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    
+    team.push(info);
+  }
+  
+  res.json(team);
+});
+
+// Second Brain documents endpoint
+app.get('/api/brain/documents', (req, res) => {
+  const docsDir = '/home/clawdbot/clawd/brain/documents';
+  const docs = [];
+  
+  function scanDir(dir, prefix = '') {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        scanDir(path.join(dir, entry.name), prefix + entry.name + '/');
+      } else if (entry.name.endsWith('.md')) {
+        try {
+          const content = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+          // Parse frontmatter
+          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+          let meta = {};
+          if (fmMatch) {
+            const lines = fmMatch[1].split('\n');
+            for (const line of lines) {
+              const m = line.match(/^(\w+):\s*(.+)/);
+              if (m) {
+                let val = m[2].trim().replace(/^["']|["']$/g, '');
+                if (val.startsWith('[')) {
+                  try { val = JSON.parse(val.replace(/'/g, '"')); } catch(e) { val = val.replace(/[\[\]]/g, '').split(',').map(s => s.trim()); }
+                }
+                meta[m[1]] = val;
+              }
+            }
+          }
+          const body = fmMatch ? content.slice(fmMatch[0].length).trim() : content;
+          docs.push({
+            path: prefix + entry.name,
+            slug: entry.name.replace('.md', ''),
+            ...meta,
+            preview: body.slice(0, 300),
+            wordCount: body.split(/\s+/).length
+          });
+        } catch (e) { /* skip */ }
+      }
+    }
+  }
+  
+  scanDir(docsDir);
+  res.json(docs);
+});
+
+// Get single brain document
+app.get('/api/brain/documents/:type/:slug', (req, res) => {
+  const filePath = path.join('/home/clawdbot/clawd/brain/documents', req.params.type, req.params.slug + '.md');
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+  res.json({ content: fs.readFileSync(filePath, 'utf8') });
+});
+
 // Catch-all: serve index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

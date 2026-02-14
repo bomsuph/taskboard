@@ -323,6 +323,137 @@
     const PROJECTS = ['medspa', 'partnersmemo', 'personal', 'general'];
     const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
     
+    function TeamPanel() {
+      const [team, setTeam] = useState([]);
+      const [loading, setLoading] = useState(true);
+      
+      useEffect(() => {
+        fetch('/api/team').then(r => r.json()).then(d => { setTeam(d); setLoading(false); });
+      }, []);
+      
+      if (loading) return <div className="loading">Loading team...</div>;
+      
+      const modelShort = (m) => {
+        if (!m) return '?';
+        const parts = m.split('/');
+        return parts[parts.length - 1];
+      };
+      
+      return (
+        <div style={{padding: 24, maxWidth: 900, margin: '0 auto'}}>
+          <h2 style={{marginBottom: 24, fontSize: 20}}>👥 Team Status</h2>
+          <div style={{display: 'grid', gap: 16}}>
+            {team.map(member => (
+              <div key={member.name} style={{
+                background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: 20, position: 'relative'
+              }}>
+                <div style={{position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: '50%', background: member.status === 'online' ? '#22c55e' : '#ef4444'}}></div>
+                <div style={{display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16}}>
+                  <span style={{fontSize: 28}}>{member.emoji}</span>
+                  <div>
+                    <div style={{fontWeight: 600, fontSize: 18}}>{member.name}</div>
+                    <div style={{color: 'var(--text-muted)', fontSize: 13}}>Port {member.port} • {member.status}</div>
+                  </div>
+                </div>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13}}>
+                  <div>
+                    <div style={{color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', fontSize: 11}}>Primary Model</div>
+                    <div style={{background: 'var(--bg)', padding: '6px 10px', borderRadius: 6, fontFamily: 'monospace', fontSize: 12}}>
+                      {modelShort(member.model)}
+                      {member.runtimeOverride && <span style={{color: 'var(--high)', marginLeft: 6, fontSize: 10}}>RUNTIME</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', fontSize: 11}}>Cron Model</div>
+                    <div style={{background: 'var(--bg)', padding: '6px 10px', borderRadius: 6, fontFamily: 'monospace', fontSize: 12}}>
+                      {member.cronModel || 'default'}
+                    </div>
+                  </div>
+                </div>
+                {member.fallbacks?.length > 0 && (
+                  <div style={{marginTop: 12}}>
+                    <div style={{color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', marginBottom: 4}}>Fallbacks</div>
+                    <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
+                      {member.fallbacks.map((fb, i) => (
+                        <span key={i} style={{background: 'var(--bg)', padding: '3px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'monospace'}}>
+                          {modelShort(fb)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    function BrainPanel() {
+      const [docs, setDocs] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [content, setContent] = useState('');
+      const [loading, setLoading] = useState(true);
+      
+      useEffect(() => {
+        fetch('/api/brain/documents').then(r => r.json()).then(d => { setDocs(d); setLoading(false); });
+      }, []);
+      
+      const loadDoc = async (doc) => {
+        const typePath = doc.path.split('/')[0];
+        const res = await fetch(`/api/brain/documents/${typePath}/${doc.slug}`);
+        const data = await res.json();
+        setContent(data.content);
+        setSelected(doc);
+      };
+      
+      if (loading) return <div className="loading">Loading brain...</div>;
+      
+      const grouped = docs.reduce((acc, d) => {
+        const type = d.type || d.path.split('/')[0] || 'other';
+        if (!acc[type]) acc[type] = [];
+        acc[type].push(d);
+        return acc;
+      }, {});
+      
+      if (selected) {
+        return (
+          <div style={{padding: 24, maxWidth: 800, margin: '0 auto'}}>
+            <button onClick={() => setSelected(null)} style={{background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 16px', borderRadius: 6, cursor: 'pointer', marginBottom: 16}}>← Back</button>
+            <div style={{background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24}}>
+              <h2 style={{marginBottom: 8}}>{selected.title || selected.slug}</h2>
+              <div style={{color: 'var(--text-muted)', fontSize: 13, marginBottom: 16}}>{selected.date} • {selected.wordCount} words</div>
+              <pre style={{whiteSpace: 'pre-wrap', fontFamily: 'Inter, sans-serif', fontSize: 14, lineHeight: 1.7, color: 'var(--text)'}}>{content.replace(/^---[\s\S]*?---\n/, '')}</pre>
+            </div>
+          </div>
+        );
+      }
+      
+      return (
+        <div style={{padding: 24, maxWidth: 900, margin: '0 auto'}}>
+          <h2 style={{marginBottom: 24, fontSize: 20}}>🧠 Second Brain</h2>
+          {Object.entries(grouped).map(([type, typeDocs]) => (
+            <div key={type} style={{marginBottom: 24}}>
+              <h3 style={{fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 12}}>{type}</h3>
+              <div style={{display: 'grid', gap: 12}}>
+                {typeDocs.map(doc => (
+                  <div key={doc.path} onClick={() => loadDoc(doc)} style={{
+                    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10,
+                    padding: 16, cursor: 'pointer', transition: 'border-color 0.2s'
+                  }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                    <div style={{fontWeight: 500, marginBottom: 4}}>{doc.title || doc.slug}</div>
+                    <div style={{fontSize: 12, color: 'var(--text-muted)'}}>{doc.date} • {doc.wordCount} words</div>
+                    <div style={{fontSize: 13, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5}}>{doc.preview?.slice(0, 150)}...</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    
     function App() {
       const [tasks, setTasks] = useState([]);
       const [stats, setStats] = useState({});
@@ -331,6 +462,7 @@
       const [editingTask, setEditingTask] = useState(null);
       const [draggingTask, setDraggingTask] = useState(null);
       const [filter, setFilter] = useState('all');
+      const [view, setView] = useState('board');
       
       const fetchData = useCallback(async () => {
         try {
@@ -437,12 +569,23 @@
                 <div className="stat-label">Done</div>
               </div>
             </div>
-            <button className="btn" onClick={() => { setEditingTask(null); setModalOpen(true); }}>
-              + New Task
-            </button>
+            <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+              <div style={{display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 8, padding: 3}}>
+                {[{id:'board',label:'📋 Board'},{id:'team',label:'👥 Team'},{id:'brain',label:'🧠 Brain'}].map(tab => (
+                  <button key={tab.id} onClick={() => setView(tab.id)} style={{
+                    background: view === tab.id ? 'var(--accent)' : 'transparent',
+                    border: 'none', color: 'var(--text)', padding: '6px 14px', borderRadius: 6,
+                    cursor: 'pointer', fontSize: 13, fontWeight: view === tab.id ? 600 : 400
+                  }}>{tab.label}</button>
+                ))}
+              </div>
+              {view === 'board' && <button className="btn" onClick={() => { setEditingTask(null); setModalOpen(true); }}>+ New Task</button>}
+            </div>
           </header>
           
-          <div className="filters">
+          {view === 'team' && <TeamPanel />}
+          {view === 'brain' && <BrainPanel />}
+          {view === 'board' && <><div className="filters">
             <span style={{color: 'var(--text-muted)', fontSize: 14}}>Filter:</span>
             <button 
               className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
@@ -490,6 +633,7 @@
             ))}
           </div>
           
+          </>}
           {modalOpen && (
             <TaskModal
               task={editingTask}
