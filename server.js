@@ -65,10 +65,11 @@ app.get('/api/tasks/:id', (req, res) => {
   const data = loadData();
   const task = data.tasks.find(t => t.id === req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  
+
   const activity = data.activity.filter(a => a.task_id === req.params.id);
   const comments = (data.comments || []).filter(c => c.task_id === req.params.id);
-  res.json({ ...task, activity, comments });
+  const linkedDocuments = (data.taskDocuments || {})[req.params.id] || [];
+  res.json({ ...task, activity, comments, linkedDocuments });
 });
 
 // Create task
@@ -112,11 +113,11 @@ app.patch('/api/tasks/:id', (req, res) => {
   const data = loadData();
   const taskIndex = data.tasks.findIndex(t => t.id === req.params.id);
   if (taskIndex === -1) return res.status(404).json({ error: 'Task not found' });
-  
+
   const task = data.tasks[taskIndex];
   const updates = req.body;
   const now = new Date().toISOString();
-  
+
   // Track status change
   if (updates.status && updates.status !== task.status) {
     data.activity.push({
@@ -130,7 +131,7 @@ app.patch('/api/tasks/:id', (req, res) => {
       created_at: now
     });
   }
-  
+
   // Track due_date change
   if (updates.due_date !== undefined && updates.due_date !== task.due_date) {
     data.activity.push({
@@ -142,13 +143,94 @@ app.patch('/api/tasks/:id', (req, res) => {
       created_at: now
     });
   }
-  
+
   // Apply updates
   Object.assign(task, updates, { updated_at: now });
   data.tasks[taskIndex] = task;
-  
+
   saveData(data);
   res.json(task);
+});
+
+// Link document to task
+app.post('/api/tasks/:id/documents', (req, res) => {
+  const data = loadData();
+  const task = data.tasks.find(t => t.id === req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const { path: docPath, title, type } = req.body;
+  if (!docPath) return res.status(400).json({ error: 'Document path is required' });
+
+  if (!data.taskDocuments) data.taskDocuments = {};
+  if (!data.taskDocuments[req.params.id]) data.taskDocuments[req.params.id] = [];
+
+  const exists = data.taskDocuments[req.params.id].find(d => d.path === docPath);
+  if (exists) return res.status(409).json({ error: 'Document already linked' });
+
+  const link = { path: docPath, title, type, linkedAt: new Date().toISOString() };
+  data.taskDocuments[req.params.id].push(link);
+
+  data.activity.push({
+    id: Date.now(),
+    task_id: task.id,
+    action: 'linked',
+    by: req.body.by || 'system',
+    note: `Linked document: ${title || docPath}`,
+    created_at: new Date().toISOString()
+  });
+
+  saveData(data);
+  res.status(201).json(link);
+});
+
+// Unlink document from task
+app.delete('/api/tasks/:id/documents/:docPath', (req, res) => {
+  const data = loadData();
+  const task = data.tasks.find(t => t.id === req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (!data.taskDocuments || !data.taskDocuments[req.params.id]) {
+    return res.status(404).json({ error: 'No linked documents' });
+  }
+
+  const docPath = decodeURIComponent(req.params.docPath);
+  const idx = data.taskDocuments[req.params.id].findIndex(d => d.path === docPath);
+  if (idx === -1) return res.status(404).json({ error: 'Document not linked' });
+
+  const removed = data.taskDocuments[req.params.id].splice(idx, 1)[0];
+
+  data.activity.push({
+    id: Date.now(),
+    task_id: task.id,
+    action: 'unlinked',
+    by: req.query.by || 'system',
+    note: `Unlinked document: ${removed.title || removed.path}`,
+    created_at: new Date().toISOString()
+  });
+
+  saveData(data);
+  res.json({ success: true });
+});
+
+// Get task-document mappings for Brain view
+app.get('/api/task-documents', (req, res) => {
+  const data = loadData();
+  const mappings = data.taskDocuments || {};
+  const result = {};
+
+  // Count linked tasks per document
+  for (const [taskId, docs] of Object.entries(mappings)) {
+    for (const doc of docs) {
+      if (!result[doc.path]) result[doc.path] = { count: 0, tasks: [] };
+      const task = data.tasks.find(t => t.id === taskId) || data.archived?.find(t => t.id === taskId);
+      if (task) {
+        result[doc.path].count++;
+        result[doc.path].tasks.push({ id: taskId, title: task.title, status: task.status });
+      }
+    }
+  }
+
+  res.json(result);
 });
 
 // Archive task (soft delete)
