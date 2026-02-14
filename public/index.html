@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskBoard — Bom & Alice</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f0f1a;
+      --bg-surface: #1a1a2e;
+      --bg-hover: #252542;
+      --border: #2d2d4a;
+      --text: #e4e4ef;
+      --text-muted: #8b8ba7;
+      --accent: #7c6ff7;
+      --accent-hover: #9589f5;
+      --urgent: #ef4444;
+      --high: #f59e0b;
+      --normal: #22c55e;
+      --low: #6b7280;
+      --bom: #3b82f6;
+      --alice: #7c6ff7;
+      --project-medspa: #ec4899;
+      --project-partnersmemo: #06b6d4;
+      --project-personal: #8b5cf6;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .logo-text h1 { font-size: 18px; font-weight: 600; }
+    .logo-text span { font-size: 12px; color: var(--text-muted); }
+    .stats {
+      display: flex;
+      gap: 24px;
+    }
+    .stat { text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .filters {
+      padding: 16px 24px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .filter-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .board {
+      display: flex;
+      gap: 16px;
+      padding: 24px;
+      overflow-x: auto;
+      min-height: calc(100vh - 140px);
+    }
+    .column {
+      min-width: 300px;
+      max-width: 350px;
+      flex: 1;
+    }
+    .column-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-surface);
+      border-radius: 12px 12px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+    }
+    .column-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .column-count {
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .column-body {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 12px;
+      min-height: 400px;
+    }
+    .column-body.drag-over { background: var(--bg-hover); }
+    .task-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+      cursor: grab;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .task-card:hover { border-color: var(--accent); }
+    .task-card.dragging { opacity: 0.5; }
+    .task-priority {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: 10px 10px 0 0;
+    }
+    .priority-urgent { background: var(--urgent); }
+    .priority-high { background: var(--high); }
+    .priority-normal { background: var(--normal); }
+    .priority-low { background: var(--low); }
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .task-title {
+      font-weight: 500;
+      font-size: 14px;
+      line-height: 1.4;
+      flex: 1;
+    }
+    .task-menu {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px;
+    }
+    .task-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .task-tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .tag-medspa { background: rgba(236, 72, 153, 0.15); color: var(--project-medspa); }
+    .tag-partnersmemo { background: rgba(6, 182, 212, 0.15); color: var(--project-partnersmemo); }
+    .tag-personal { background: rgba(139, 92, 246, 0.15); color: var(--project-personal); }
+    .task-assignee {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .assignee-bom { background: var(--bom); }
+    .assignee-alice { background: var(--alice); }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .modal-body { padding: 24px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .form-group textarea { min-height: 100px; resize: vertical; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+    .btn-secondary {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { background: var(--bg-hover); }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    
+    const API_URL = '';
+    const COLUMNS = [
+      { id: 'backlog', title: 'Backlog', color: '#6b7280' },
+      { id: 'todo', title: 'To Do', color: '#3b82f6' },
+      { id: 'in-progress', title: 'In Progress', color: '#f59e0b' },
+      { id: 'review', title: 'Review', color: '#8b5cf6' },
+      { id: 'done', title: 'Done', color: '#22c55e' }
+    ];
+    const PROJECTS = ['medspa', 'partnersmemo', 'personal', 'general'];
+    const PRIORITIES = ['urgent', 'high', 'normal', 'low'];
+    
+    function App() {
+      const [tasks, setTasks] = useState([]);
+      const [stats, setStats] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [modalOpen, setModalOpen] = useState(false);
+      const [editingTask, setEditingTask] = useState(null);
+      const [draggingTask, setDraggingTask] = useState(null);
+      const [filter, setFilter] = useState('all');
+      
+      const fetchData = useCallback(async () => {
+        try {
+          const [tasksRes, statsRes] = await Promise.all([
+            fetch(`${API_URL}/api/tasks`),
+            fetch(`${API_URL}/api/stats`)
+          ]);
+          const tasksData = await tasksRes.json();
+          const statsData = await statsRes.json();
+          setTasks(tasksData);
+          setStats(statsData);
+        } catch (err) {
+          console.error('Failed to fetch:', err);
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+      
+      useEffect(() => { fetchData(); }, [fetchData]);
+      
+      const handleDragStart = (e, task) => {
+        setDraggingTask(task);
+        e.dataTransfer.effectAllowed = 'move';
+      };
+      
+      const handleDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      };
+      
+      const handleDrop = async (e, status) => {
+        e.preventDefault();
+        if (!draggingTask || draggingTask.status === status) return;
+        
+        try {
+          await fetch(`${API_URL}/api/tasks/${draggingTask.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+          });
+          await fetchData();
+        } catch (err) {
+          console.error('Failed to move task:', err);
+        }
+        setDraggingTask(null);
+      };
+      
+      const handleCreateTask = async (taskData) => {
+        try {
+          await fetch(`${API_URL}/api/tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(taskData)
+          });
+          setModalOpen(false);
+          await fetchData();
+        } catch (err) {
+          console.error('Failed to create task:', err);
+        }
+      };
+      
+      const handleDeleteTask = async (taskId) => {
+        if (!confirm('Delete this task?')) return;
+        try {
+          await fetch(`${API_URL}/api/tasks/${taskId}`, { method: 'DELETE' });
+          await fetchData();
+        } catch (err) {
+          console.error('Failed to delete task:', err);
+        }
+      };
+      
+      const filteredTasks = filter === 'all' 
+        ? tasks 
+        : tasks.filter(t => t.project === filter);
+      
+      const tasksByColumn = COLUMNS.reduce((acc, col) => {
+        acc[col.id] = filteredTasks.filter(t => t.status === col.id);
+        return acc;
+      }, {});
+      
+      if (loading) return <div className="loading">Loading...</div>;
+      
+      return (
+        <>
+          <header className="header">
+            <div className="logo">
+              <div className="logo-icon">TB</div>
+              <div className="logo-text">
+                <h1>TaskBoard</h1>
+                <span>Bom & Alice</span>
+              </div>
+            </div>
+            <div className="stats">
+              <div className="stat">
+                <div className="stat-value">{stats.total || 0}</div>
+                <div className="stat-label">Total</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value" style={{color: 'var(--high)'}}>{stats.in_progress || 0}</div>
+                <div className="stat-label">Active</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value" style={{color: 'var(--normal)'}}>{stats.done || 0}</div>
+                <div className="stat-label">Done</div>
+              </div>
+            </div>
+            <button className="btn" onClick={() => { setEditingTask(null); setModalOpen(true); }}>
+              + New Task
+            </button>
+          </header>
+          
+          <div className="filters">
+            <span style={{color: 'var(--text-muted)', fontSize: 14}}>Filter:</span>
+            <button 
+              className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
+              onClick={() => setFilter('all')}
+            >
+              All
+            </button>
+            {PROJECTS.map(p => (
+              <button
+                key={p}
+                className={`filter-btn ${filter === p ? 'active' : ''}`}
+                onClick={() => setFilter(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          
+          <div className="board">
+            {COLUMNS.map(column => (
+              <div key={column.id} className="column">
+                <div className="column-header">
+                  <div className="column-title">
+                    <span style={{width: 8, height: 8, borderRadius: '50%', background: column.color}}></span>
+                    {column.title}
+                  </div>
+                  <span className="column-count">{tasksByColumn[column.id]?.length || 0}</span>
+                </div>
+                <div 
+                  className="column-body"
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, column.id)}
+                >
+                  {tasksByColumn[column.id]?.map(task => (
+                    <TaskCard 
+                      key={task.id} 
+                      task={task} 
+                      onDragStart={handleDragStart}
+                      onEdit={() => { setEditingTask(task); setModalOpen(true); }}
+                      onDelete={() => handleDeleteTask(task.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {modalOpen && (
+            <TaskModal
+              task={editingTask}
+              onClose={() => setModalOpen(false)}
+              onSubmit={editingTask ? null : handleCreateTask}
+            />
+          )}
+        </>
+      );
+    }
+    
+    function TaskCard({ task, onDragStart, onEdit, onDelete }) {
+      const priorityClass = `priority-${task.priority || 'normal'}`;
+      const projectClass = `tag-${task.project}`;
+      
+      return (
+        <div 
+          className="task-card"
+          draggable
+          onDragStart={(e) => onDragStart(e, task)}
+        >
+          <div className={`task-priority ${priorityClass}`}></div>
+          <div className="task-header">
+            <div className="task-title">{task.title}</div>
+            <button className="task-menu" onClick={onDelete}>×</button>
+          </div>
+          <div className="task-meta">
+            <span className={`task-tag ${projectClass}`}>{task.project}</span>
+            <div className={`task-assignee assignee-${task.assignee}`}>
+              {task.assignee === 'bom' ? 'B' : 'A'}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    function TaskModal({ task, onClose, onSubmit }) {
+      const [formData, setFormData] = useState({
+        title: task?.title || '',
+        description: task?.description || '',
+        project: task?.project || 'general',
+        priority: task?.priority || 'normal',
+        assignee: task?.assignee || 'bom'
+      });
+      
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit(formData);
+      };
+      
+      return (
+        <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose()}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2>{task ? 'Edit Task' : 'New Task'}</h2>
+              <button className="modal-close" onClick={onClose}>×</button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Title</label>
+                  <input 
+                    type="text" 
+                    value={formData.title}
+                    onChange={e => setFormData({...formData, title: e.target.value})}
+                    placeholder="What needs to be done?"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea 
+                    value={formData.description}
+                    onChange={e => setFormData({...formData, description: e.target.value})}
+                    placeholder="Add details..."
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Project</label>
+                    <select 
+                      value={formData.project}
+                      onChange={e => setFormData({...formData, project: e.target.value})}
+                    >
+                      {PROJECTS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Priority</label>
+                    <select 
+                      value={formData.priority}
+                      onChange={e => setFormData({...formData, priority: e.target.value})}
+                    >
+                      {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Assignee</label>
+                  <select 
+                    value={formData.assignee}
+                    onChange={e => setFormData({...formData, assignee: e.target.value})}
+                  >
+                    <option value="bom">Bom</option>
+                    <option value="alice">Alice</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+                <button type="submit" className="btn">{task ? 'Save Changes' : 'Create Task'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+    
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
