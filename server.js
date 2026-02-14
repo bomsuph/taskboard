@@ -3,6 +3,8 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const WebSocket = require('ws');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 3851;
@@ -27,6 +29,33 @@ function loadData() {
 
 function saveData(data) {
   fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+// WebSocket clients - Map to store client metadata
+const clients = new Map();
+
+// Broadcast message to all connected clients except sender (optional)
+function broadcast(message, sender = null) {
+  const data = typeof message === 'string' ? message : JSON.stringify(message);
+  clients.forEach((metadata, ws) => {
+    if (ws !== sender && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(data);
+      } catch (e) {
+        console.error('WebSocket broadcast error:', e.message);
+      }
+    }
+  });
+}
+
+// Broadcast task updates
+function broadcastTaskUpdate(type, task, extra = {}) {
+  broadcast({
+    type: `task:${type}`,
+    task,
+    timestamp: new Date().toISOString(),
+    ...extra
+  });
 }
 
 // API Routes
@@ -105,6 +134,10 @@ app.post('/api/tasks', (req, res) => {
   });
   
   saveData(data);
+  
+  // Broadcast to all clients
+  broadcastTaskUpdate('created', task, { created_by });
+  
   res.status(201).json(task);
 });
 
@@ -113,11 +146,11 @@ app.patch('/api/tasks/:id', (req, res) => {
   const data = loadData();
   const taskIndex = data.tasks.findIndex(t => t.id === req.params.id);
   if (taskIndex === -1) return res.status(404).json({ error: 'Task not found' });
-
+  
   const task = data.tasks[taskIndex];
   const updates = req.body;
   const now = new Date().toISOString();
-
+  
   // Track status change
   if (updates.status && updates.status !== task.status) {
     data.activity.push({
@@ -131,7 +164,7 @@ app.patch('/api/tasks/:id', (req, res) => {
       created_at: now
     });
   }
-
+  
   // Track due_date change
   if (updates.due_date !== undefined && updates.due_date !== task.due_date) {
     data.activity.push({
@@ -143,94 +176,17 @@ app.patch('/api/tasks/:id', (req, res) => {
       created_at: now
     });
   }
-
+  
   // Apply updates
   Object.assign(task, updates, { updated_at: now });
   data.tasks[taskIndex] = task;
-
+  
   saveData(data);
+  
+  // Broadcast to all clients
+  broadcastTaskUpdate('updated', task, { updates });
+  
   res.json(task);
-});
-
-// Link document to task
-app.post('/api/tasks/:id/documents', (req, res) => {
-  const data = loadData();
-  const task = data.tasks.find(t => t.id === req.params.id);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  const { path: docPath, title, type } = req.body;
-  if (!docPath) return res.status(400).json({ error: 'Document path is required' });
-
-  if (!data.taskDocuments) data.taskDocuments = {};
-  if (!data.taskDocuments[req.params.id]) data.taskDocuments[req.params.id] = [];
-
-  const exists = data.taskDocuments[req.params.id].find(d => d.path === docPath);
-  if (exists) return res.status(409).json({ error: 'Document already linked' });
-
-  const link = { path: docPath, title, type, linkedAt: new Date().toISOString() };
-  data.taskDocuments[req.params.id].push(link);
-
-  data.activity.push({
-    id: Date.now(),
-    task_id: task.id,
-    action: 'linked',
-    by: req.body.by || 'system',
-    note: `Linked document: ${title || docPath}`,
-    created_at: new Date().toISOString()
-  });
-
-  saveData(data);
-  res.status(201).json(link);
-});
-
-// Unlink document from task
-app.delete('/api/tasks/:id/documents/:docPath', (req, res) => {
-  const data = loadData();
-  const task = data.tasks.find(t => t.id === req.params.id);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  if (!data.taskDocuments || !data.taskDocuments[req.params.id]) {
-    return res.status(404).json({ error: 'No linked documents' });
-  }
-
-  const docPath = decodeURIComponent(req.params.docPath);
-  const idx = data.taskDocuments[req.params.id].findIndex(d => d.path === docPath);
-  if (idx === -1) return res.status(404).json({ error: 'Document not linked' });
-
-  const removed = data.taskDocuments[req.params.id].splice(idx, 1)[0];
-
-  data.activity.push({
-    id: Date.now(),
-    task_id: task.id,
-    action: 'unlinked',
-    by: req.query.by || 'system',
-    note: `Unlinked document: ${removed.title || removed.path}`,
-    created_at: new Date().toISOString()
-  });
-
-  saveData(data);
-  res.json({ success: true });
-});
-
-// Get task-document mappings for Brain view
-app.get('/api/task-documents', (req, res) => {
-  const data = loadData();
-  const mappings = data.taskDocuments || {};
-  const result = {};
-
-  // Count linked tasks per document
-  for (const [taskId, docs] of Object.entries(mappings)) {
-    for (const doc of docs) {
-      if (!result[doc.path]) result[doc.path] = { count: 0, tasks: [] };
-      const task = data.tasks.find(t => t.id === taskId) || data.archived?.find(t => t.id === taskId);
-      if (task) {
-        result[doc.path].count++;
-        result[doc.path].tasks.push({ id: taskId, title: task.title, status: task.status });
-      }
-    }
-  }
-
-  res.json(result);
 });
 
 // Archive task (soft delete)
@@ -255,6 +211,10 @@ app.patch('/api/tasks/:id/archive', (req, res) => {
   });
   
   saveData(data);
+  
+  // Broadcast to all clients
+  broadcastTaskUpdate('archived', task, { archived_at: now });
+  
   res.json(task);
 });
 
@@ -280,6 +240,10 @@ app.post('/api/tasks/:id/restore', (req, res) => {
   });
   
   saveData(data);
+  
+  // Broadcast to all clients
+  broadcastTaskUpdate('restored', task);
+  
   res.json(task);
 });
 
@@ -320,6 +284,15 @@ app.post('/api/tasks/:id/comments', (req, res) => {
   });
   
   saveData(data);
+  
+  // Broadcast comment to all clients
+  broadcast({
+    type: 'task:commented',
+    comment,
+    task_id: req.params.id,
+    timestamp: now
+  });
+  
   res.status(201).json(comment);
 });
 
@@ -349,6 +322,14 @@ app.delete('/api/tasks/:id', (req, res) => {
   data.activity = data.activity.filter(a => a.task_id !== req.params.id);
   data.comments = (data.comments || []).filter(c => c.task_id !== req.params.id);
   saveData(data);
+  
+  // Broadcast deletion
+  broadcast({
+    type: 'task:deleted',
+    task_id: req.params.id,
+    timestamp: new Date().toISOString()
+  });
+  
   res.json({ success: true });
 });
 
@@ -474,7 +455,73 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
+// Create HTTP server
+const server = http.createServer(app);
+
+// Create WebSocket server on same HTTP server
+const wss = new WebSocket.Server({ server, path: '/ws' });
+
+wss.on('connection', (ws, req) => {
+  console.log('WebSocket client connected');
+  
+  // Store client metadata
+  const metadata = { connectedAt: new Date().toISOString() };
+  clients.set(ws, metadata);
+  
+  // Send initial connection confirmation
+  ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }));
+  
+  // Handle messages from clients
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data);
+      
+      // Handle ping/pong
+      if (message.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+        return;
+      }
+      
+      // Handle typing indicator
+      if (message.type === 'typing') {
+        // Broadcast typing indicator to all OTHER clients
+        broadcast({
+          type: 'user:typing',
+          user: message.user || 'Someone',
+          taskId: message.taskId || null
+        }, ws);
+        return;
+      }
+      
+      // Handle task mutations via WebSocket
+      if (message.type === 'task:create') {
+        // Check for duplicate processing (could add idempotency token here)
+        // Just broadcast for now - actual create happens via API
+        broadcastTaskUpdate('created', message.task);
+      }
+      
+      console.log('WebSocket message received:', message.type);
+    } catch (e) {
+      console.error('WebSocket message parse error:', e.message);
+    }
+  });
+  
+  // Handle client disconnect
+  ws.on('close', () => {
+    console.log('WebSocket client disconnected');
+    clients.delete(ws);
+  });
+  
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error.message);
+    clients.delete(ws);
+  });
+});
+
+// Start server
+server.listen(PORT, () => {
   console.log(`TaskBoard server running on port ${PORT}`);
-  console.log(`Open: http://localhost:${PORT}`);
+  console.log(`WebSocket endpoint: ws://localhost:${PORT}/ws`);
+  console.log(`HTTP endpoint: http://localhost:${PORT}`);
 });
