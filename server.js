@@ -74,7 +74,7 @@ app.get('/api/tasks/:id', (req, res) => {
 // Create task
 app.post('/api/tasks', (req, res) => {
   const data = loadData();
-  const { title, description, priority = 'normal', project = 'general', assignee = 'bom', due_date, created_by = 'bom' } = req.body;
+  const { title, description, status: reqStatus, priority = 'normal', project = 'general', assignee = 'bom', due_date, created_by = 'bom' } = req.body;
   
   if (!title) return res.status(400).json({ error: 'Title is required' });
   
@@ -83,7 +83,7 @@ app.post('/api/tasks', (req, res) => {
     id: uuidv4(),
     title,
     description: description || '',
-    status: 'backlog',
+    status: reqStatus || 'backlog',
     priority,
     project,
     assignee,

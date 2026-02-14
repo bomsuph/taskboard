@@ -285,6 +285,86 @@
       font-size: 12px; color: var(--text-muted); margin-left: 8px; white-space: nowrap;
     }
     .task-card.search-hidden { display: none; }
+
+    /* ========== MOBILE RESPONSIVE ========== */
+    .mobile-column-tabs { display: none; }
+    .move-menu {
+      position: absolute; right: 8px; top: 40px; z-index: 50;
+      background: var(--bg-surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      min-width: 160px; display: none;
+    }
+    .move-menu.open { display: block; }
+    .move-menu button {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      background: none; border: none; color: var(--text); padding: 10px 12px;
+      font-size: 14px; cursor: pointer; border-radius: 6px; font-family: inherit;
+      min-height: 44px; text-align: left;
+    }
+    .move-menu button:hover, .move-menu button:active { background: var(--bg-hover); }
+    .move-menu button.current { color: var(--accent); font-weight: 600; }
+
+    @media (max-width: 768px) {
+      .header { flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+      .header .logo { flex: 1; min-width: 120px; }
+      .header .stats { gap: 16px; order: 3; width: 100%; justify-content: space-around; padding-top: 10px; border-top: 1px solid var(--border); }
+      .stat-value { font-size: 18px; }
+      .header > div:last-child { order: 2; flex-wrap: wrap; gap: 6px; }
+      .header > div:last-child > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .header > div:last-child button { min-height: 44px; }
+
+      .filters { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px 16px; gap: 8px; flex-wrap: nowrap; }
+      .filter-btn { white-space: nowrap; min-height: 44px; padding: 10px 16px; }
+
+      .search-bar input { width: 160px; font-size: 16px; }
+      .search-bar input:focus { width: 200px; }
+
+      .mobile-column-tabs {
+        display: flex !important; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        gap: 0; padding: 0 16px; background: var(--bg-surface);
+        border-bottom: 1px solid var(--border);
+      }
+      .mobile-column-tab {
+        flex: none; padding: 12px 16px; border: none; background: none;
+        color: var(--text-muted); font-size: 13px; font-weight: 500;
+        cursor: pointer; white-space: nowrap; border-bottom: 3px solid transparent;
+        font-family: inherit; min-height: 44px; transition: all 0.2s;
+      }
+      .mobile-column-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+      .mobile-column-tab .tab-count {
+        background: var(--bg); padding: 1px 6px; border-radius: 8px;
+        font-size: 11px; margin-left: 6px;
+      }
+
+      .board { flex-direction: column; padding: 12px 16px; gap: 0; min-height: auto; overflow-x: hidden; }
+      .column { min-width: 100%; max-width: 100%; width: 100%; }
+      .column.mobile-hidden { display: none; }
+      .column-header { display: none; }
+      .column-body { border-radius: 12px; border: none; background: transparent; padding: 0; min-height: 120px; }
+
+      .task-card { margin-bottom: 10px; }
+      .task-card-main { padding: 16px; min-height: 44px; }
+      .task-action-btn { padding: 10px; font-size: 18px; min-width: 44px; min-height: 44px; }
+      .task-title { font-size: 15px; }
+      .task-tag { font-size: 12px; padding: 4px 10px; }
+      .task-assignee { width: 28px; height: 28px; font-size: 11px; }
+
+      .modal { width: 100%; max-width: 100%; border-radius: 16px 16px 0 0; max-height: 95vh; }
+      .modal-overlay { align-items: flex-end; }
+      .form-row { grid-template-columns: 1fr; }
+      .form-group input, .form-group textarea, .form-group select { min-height: 44px; font-size: 16px; }
+
+      .archive-card { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .archive-card > div:last-child { width: 100%; display: flex; }
+      .archive-card > div:last-child .btn { flex: 1; justify-content: center; min-height: 44px; }
+
+      .comment-input-row input { min-height: 44px; font-size: 16px; }
+      .comment-input-row .btn { min-height: 44px; }
+
+      .quick-add-btn { min-height: 44px; }
+      .quick-add-form input { min-height: 44px; font-size: 16px; }
+      .quick-add-row select { min-height: 44px; }
+    }
   </style>
 </head>
 <body>
@@ -413,8 +493,9 @@
       );
     }
     
-    function TaskCard({ task, onDragStart, onArchive, fetchData }) {
+    function TaskCard({ task, onDragStart, onArchive, fetchData, onMoveTask }) {
       const [expanded, setExpanded] = useState(false);
+      const [moveMenuOpen, setMoveMenuOpen] = useState(false);
       const priorityClass = `priority-${task.priority || 'normal'}`;
       const projectClass = `tag-${task.project}`;
       
@@ -429,7 +510,18 @@
             <div className="task-header">
               <div className="task-title">{task.title}</div>
               <div className="task-actions" onClick={e => e.stopPropagation()}>
+                <button className="task-action-btn" title="Move to..." onClick={(e) => { e.stopPropagation(); setMoveMenuOpen(!moveMenuOpen); }}>↗️</button>
                 <button className="task-action-btn" title="Archive" onClick={onArchive}>📦</button>
+                {moveMenuOpen && (
+                  <div className="move-menu open" onClick={e => e.stopPropagation()}>
+                    {COLUMNS.map(col => (
+                      <button key={col.id} className={task.status === col.id ? 'current' : ''} onClick={() => { if (task.status !== col.id) onMoveTask(task.id, col.id); setMoveMenuOpen(false); }}>
+                        <span style={{width:8,height:8,borderRadius:'50%',background:col.color,display:'inline-block'}}></span>
+                        {col.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="task-meta">
@@ -728,6 +820,7 @@
       const [view, setView] = useState('board');
       const [quickAddColumn, setQuickAddColumn] = useState(null);
       const [searchQuery, setSearchQuery] = useState('');
+      const [mobileColumn, setMobileColumn] = useState('todo');
       const searchRef = useRef(null);
       
       const fetchData = useCallback(async () => {
@@ -784,9 +877,25 @@
         await fetchData();
       };
       
+      const handleMoveTask = async (taskId, newStatus) => {
+        await fetch(`${API_URL}/api/tasks/${taskId}`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ status: newStatus })
+        });
+        await fetchData();
+      };
+      
       const handleArchiveTask = async (taskId) => {
         await fetch(`${API_URL}/api/tasks/${taskId}/archive`, {
           method: 'PATCH', headers: {'Content-Type':'application/json'}, body: '{}'
+        });
+        await fetchData();
+      };
+      
+      const handleQuickAdd = async (taskData) => {
+        await fetch(`${API_URL}/api/tasks`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(taskData)
         });
         await fetchData();
       };
@@ -878,9 +987,18 @@
                 <button key={p} className={`filter-btn ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>{p}</button>
               ))}
             </div>
+            <div className="mobile-column-tabs">
+              {COLUMNS.map(col => (
+                <button key={col.id} className={`mobile-column-tab ${mobileColumn === col.id ? 'active' : ''}`} onClick={() => setMobileColumn(col.id)}>
+                  <span style={{width:6,height:6,borderRadius:'50%',background:col.color,display:'inline-block',marginRight:4}}></span>
+                  {col.title}
+                  <span className="tab-count">{tasksByColumn[col.id]?.length || 0}</span>
+                </button>
+              ))}
+            </div>
             <div className="board">
               {COLUMNS.map(column => (
-                <div key={column.id} className="column">
+                <div key={column.id} className={`column ${mobileColumn !== column.id ? 'mobile-hidden' : ''}`}>
                   <div className="column-header">
                     <div className="column-title">
                       <span style={{width: 8, height: 8, borderRadius: '50%', background: column.color, display: 'inline-block'}}></span>
@@ -894,9 +1012,14 @@
                         key={task.id} task={task}
                         onDragStart={handleDragStart}
                         onArchive={() => handleArchiveTask(task.id)}
+                        onMoveTask={handleMoveTask}
                         fetchData={fetchData}
                       />
                     ))}
+                    {quickAddColumn === column.id
+                      ? <QuickAddForm status={column.id} onSave={handleQuickAdd} onCancel={() => setQuickAddColumn(null)} />
+                      : <button className="quick-add-btn" onClick={() => setQuickAddColumn(column.id)}>+ Add task</button>
+                    }
                   </div>
                 </div>
               ))}
