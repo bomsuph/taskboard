@@ -141,6 +141,58 @@
     .due-week { background: rgba(34,197,94,0.15); color: var(--normal); }
     .due-later { background: rgba(107,114,128,0.1); color: var(--text-muted); }
 
+    /* Digest view styles */
+    .digest-container { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    .digest-header { margin-bottom: 24px; }
+    .digest-header h2 { font-size: 22px; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+    .digest-header p { color: var(--text-muted); font-size: 14px; }
+    .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .stat-card {
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 20px; transition: border-color 0.2s, transform 0.2s;
+    }
+    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .stat-card-icon { font-size: 24px; margin-bottom: 12px; }
+    .stat-card-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .stat-card-label { font-size: 13px; color: var(--text-muted); }
+    .stat-card.due-today-card { border-color: var(--high); }
+    .stat-card.overdue-card { border-color: var(--urgent); }
+    .digest-section { margin-bottom: 28px; }
+    .digest-section-title {
+      display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600;
+      margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .digest-section.count-0 { opacity: 0.5; }
+    .digest-task-list { display: flex; flex-direction: column; gap: 10px; }
+    .digest-task-item {
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px 16px; display: flex; align-items: center; gap: 12px; transition: border-color 0.2s;
+    }
+    .digest-task-item:hover { border-color: var(--accent); }
+    .digest-task-item.overdue { border-color: var(--urgent); background: rgba(239,68,68,0.05); }
+    .digest-task-item.today { border-color: var(--high); background: rgba(245,158,11,0.05); }
+    .digest-task-title { flex: 1; font-weight: 500; font-size: 14px; }
+    .digest-task-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+    .digest-empty { color: var(--text-muted); font-size: 14px; text-align: center; padding: 24px; }
+    .team-activity { display: grid; gap: 10px; }
+    .activity-row {
+      background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    }
+    .activity-avatar {
+      width: 32px; height: 32px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 12px; font-weight: 600;
+    }
+    .activity-avatar.bom { background: var(--bom); }
+    .activity-avatar.alice { background: var(--alice); }
+    .activity-content { flex: 1; font-size: 14px; }
+    .activity-content strong { color: var(--text); }
+    .activity-time { font-size: 12px; color: var(--text-muted); }
+    @media (max-width: 768px) {
+      .stat-cards { grid-template-columns: repeat(2, 1fr); }
+      .digest-task-item { flex-wrap: wrap; }
+    }
+
     /* Inline expansion detail panel */
     .task-detail {
       max-height: 0; overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s ease;
@@ -286,6 +338,48 @@
     }
     .task-card.search-hidden { display: none; }
 
+    /* Linked Documents Section */
+    .linked-docs-list {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .linked-doc-item {
+      background: var(--bg-hover); padding: 8px 10px; border-radius: 6;
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+      border: 1px solid transparent; transition: border-color 0.2s;
+    }
+    .linked-doc-item:hover {
+      border-color: var(--accent);
+    }
+    .doc-picker {
+      background: var(--bg-hover); border-radius: 6; padding: 8px;
+      max-height: 150px; overflow-y: auto; border: 1px solid var(--border);
+    }
+    .doc-picker-item {
+      padding: 6px 8px; cursor: pointer; border-radius: 4;
+      font-size: 12px; display: flex; align-items: center; gap: 6px;
+      transition: background 0.15s;
+    }
+    .doc-picker-item:hover {
+      background: var(--bg);
+    }
+    .wiki-link {
+      color: var(--accent);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .wiki-link:hover {
+      color: var(--accent-hover);
+    }
+    .doc-link-badge {
+      background: var(--accent);
+      color: white;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
     /* ========== MOBILE RESPONSIVE ========== */
     .mobile-column-tabs { display: none; }
     .move-menu {
@@ -417,23 +511,26 @@
       return <span className={`due-badge ${status.cls}`}>{status.emoji} {status.label}</span>;
     }
     
-    function TaskDetailPanel({ taskId, isOpen }) {
+    function TaskDetailPanel({ taskId, isOpen, onOpenDocument, allDocs }) {
       const [detail, setDetail] = useState(null);
       const [comments, setComments] = useState([]);
       const [newComment, setNewComment] = useState('');
       const [loading, setLoading] = useState(false);
-      
+      const [showDocPicker, setShowDocPicker] = useState(false);
+      const [linkedDocs, setLinkedDocs] = useState([]);
+
       useEffect(() => {
         if (isOpen && taskId) {
           setLoading(true);
           fetch(`/api/tasks/${taskId}`).then(r => r.json()).then(d => {
             setDetail(d);
             setComments(d.comments || []);
+            setLinkedDocs(d.linkedDocuments || []);
             setLoading(false);
           });
         }
       }, [isOpen, taskId]);
-      
+
       const addComment = async () => {
         if (!newComment.trim()) return;
         const res = await fetch(`/api/tasks/${taskId}/comments`, {
@@ -445,7 +542,61 @@
         setComments([...comments, comment]);
         setNewComment('');
       };
-      
+
+      const linkDocument = async (doc) => {
+        const res = await fetch(`/api/tasks/${taskId}/documents`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ path: doc.path, title: doc.title || doc.slug, type: doc.type || 'other', by: 'bom' })
+        });
+        if (res.ok) {
+          const link = await res.json();
+          setLinkedDocs([...linkedDocs, link]);
+        }
+        setShowDocPicker(false);
+      };
+
+      const unlinkDocument = async (docPath) => {
+        await fetch(`/api/tasks/${taskId}/documents/${encodeURIComponent(docPath)}?by=bom`, { method: 'DELETE' });
+        setLinkedDocs(linkedDocs.filter(d => d.path !== docPath));
+      };
+
+      // Parse [[Document Name]] syntax and convert to links
+      const renderDescription = (text) => {
+        if (!text) return null;
+        const parts = [];
+        const regex = /\[\[([^\]]+)\]\]/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match.index > lastIndex) {
+            parts.push(text.slice(lastIndex, match.index));
+          }
+          const docName = match[1];
+          // Find matching document
+          const matchedDoc = allDocs.find(d =>
+            (d.title && d.title.toLowerCase() === docName.toLowerCase()) ||
+            d.slug.toLowerCase() === docName.toLowerCase().replace(/\s+/g, '-')
+          );
+          if (matchedDoc) {
+            parts.push(
+              <a key={match.index} href="#"
+                style={{ color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}
+                onClick={(e) => { e.preventDefault(); onOpenDocument(matchedDoc); }}>
+                📄 {docName}
+              </a>
+            );
+          } else {
+            parts.push(<span key={match.index} style={{ color: 'var(--accent)', opacity: 0.7 }}>[[{docName}]]</span>);
+          }
+          lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+        return parts;
+      };
+
+      const availableDocs = allDocs.filter(d => !linkedDocs.some(ld => ld.path === d.path));
+
       return (
         <div className={`task-detail ${isOpen ? 'open' : ''}`}>
           <div className="task-detail-inner">
@@ -453,13 +604,74 @@
               {detail.description && (
                 <div className="detail-section">
                   <div className="detail-label">Description</div>
-                  <div className="detail-desc">{detail.description}</div>
+                  <div className="detail-desc">{renderDescription(detail.description)}</div>
                 </div>
               )}
-              
+
+              <div className="detail-section">
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div className="detail-label">🔗 Linked Documents ({linkedDocs.length})</div>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setShowDocPicker(!showDocPicker)}
+                    style={{padding: '4px 10px', fontSize: 11}}>
+                    + Link
+                  </button>
+                </div>
+                {showDocPicker && (
+                  <div style={{
+                    background: 'var(--bg-hover)', borderRadius: 6, padding: 8, marginBottom: 8,
+                    maxHeight: 150, overflow: 'auto'
+                  }}>
+                    {availableDocs.length === 0 ? (
+                      <div style={{fontSize: 12, color: 'var(--text-muted)'}}>No available documents</div>
+                    ) : (
+                      availableDocs.map(doc => (
+                        <div key={doc.path} onClick={() => linkDocument(doc)}
+                          style={{
+                            padding: '6px 8px', cursor: 'pointer', borderRadius: 4,
+                            fontSize: 12, display: 'flex', alignItems: 'center', gap: 6
+                          }}
+                          onMouseOver={e => e.currentTarget.style.background = 'var(--bg)'}
+                          onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                          <span>📄</span>
+                          <span>{doc.title || doc.slug}</span>
+                          <span style={{color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 10}}>{doc.type || 'other'}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                {linkedDocs.length === 0 ? (
+                  <div style={{fontSize: 12, color: 'var(--text-muted)'}}>
+                    No linked documents. Use [[Document Name]] in description or click + Link
+                  </div>
+                ) : (
+                  <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                    {linkedDocs.map(doc => (
+                      <div key={doc.path} style={{
+                        background: 'var(--bg-hover)', padding: '8px 10px', borderRadius: 6,
+                        display: 'flex', alignItems: 'center', gap: 8, fontSize: 13
+                      }}>
+                        <span>📄</span>
+                        <a href="#" style={{ color: 'var(--accent)', flex: 1 }}
+                          onClick={(e) => { e.preventDefault(); onOpenDocument(doc); }}>
+                          {doc.title || doc.slug}
+                        </a>
+                        <button onClick={() => unlinkDocument(doc.path)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-muted)',
+                            cursor: 'pointer', fontSize: 14, padding: 2
+                          }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="detail-section">
                 <div className="detail-label">Activity</div>
-                {(detail.activity || []).length === 0 
+                {(detail.activity || []).length === 0
                   ? <div style={{fontSize:12,color:'var(--text-muted)'}}>No activity yet</div>
                   : (detail.activity || []).slice(-5).map((a, i) => (
                     <div key={i} className="activity-item">
@@ -468,7 +680,7 @@
                   ))
                 }
               </div>
-              
+
               <div className="detail-section">
                 <div className="detail-label">Comments ({comments.length})</div>
                 {comments.map(c => (
@@ -478,7 +690,7 @@
                   </div>
                 ))}
                 <div className="comment-input-row">
-                  <input 
+                  <input
                     placeholder="Add a comment..."
                     value={newComment}
                     onChange={e => setNewComment(e.target.value)}
@@ -493,14 +705,17 @@
       );
     }
     
-    function TaskCard({ task, onDragStart, onArchive, fetchData, onMoveTask }) {
+    function TaskCard({ task, onDragStart, onArchive, fetchData, onMoveTask, onOpenDocument, allDocs }) {
       const [expanded, setExpanded] = useState(false);
       const [moveMenuOpen, setMoveMenuOpen] = useState(false);
       const priorityClass = `priority-${task.priority || 'normal'}`;
       const projectClass = `tag-${task.project}`;
-      
+
+      // Auto-expand if description has [[...]] links
+      const hasWikiLinks = task.description && /\[\[[^\]]+\]\]/.test(task.description);
+
       return (
-        <div 
+        <div
           className={`task-card ${expanded ? 'expanded' : ''}`}
           draggable={!expanded}
           onDragStart={(e) => !expanded && onDragStart(e, task)}
@@ -508,7 +723,10 @@
           <div className={`task-priority ${priorityClass}`}></div>
           <div className="task-card-main" onClick={() => setExpanded(!expanded)}>
             <div className="task-header">
-              <div className="task-title">{task.title}</div>
+              <div className="task-title">
+                {task.title}
+                {hasWikiLinks && <span style={{marginLeft: 4, fontSize: 12}}>🔗</span>}
+              </div>
               <div className="task-actions" onClick={e => e.stopPropagation()}>
                 <button className="task-action-btn" title="Move to..." onClick={(e) => { e.stopPropagation(); setMoveMenuOpen(!moveMenuOpen); }}>↗️</button>
                 <button className="task-action-btn" title="Archive" onClick={onArchive}>📦</button>
@@ -533,7 +751,7 @@
               </div>
             </div>
           </div>
-          <TaskDetailPanel taskId={task.id} isOpen={expanded} />
+          <TaskDetailPanel taskId={task.id} isOpen={expanded} onOpenDocument={onOpenDocument} allDocs={allDocs} />
         </div>
       );
     }
@@ -723,39 +941,350 @@
       );
     }
     
-    function BrainPanel() {
+    function formatRelativeDate(dateStr) {
+      if (!dateStr) return '';
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const date = new Date(dateStr);
+      date.setHours(0, 0, 0, 0);
+      const diff = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Yesterday';
+      if (diff < 0) return `In ${Math.abs(diff)} days`;
+      return `${diff} days ago`;
+    }
+    
+    function formatRelativeDateTime(dateStr) {
+      if (!dateStr) return '';
+      const now = Date.now();
+      const date = new Date(dateStr).getTime();
+      const diff = now - date;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      if (days === 1) return 'Yesterday';
+      return `${days} days ago`;
+    }
+    
+    function DigestPanel({ tasks }) {
+      const [loading, setLoading] = useState(true);
+      const [digestData, setDigestData] = useState(null);
+      
+      useEffect(() => {
+        const now = new Date();
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const dayAgo = new Date(now);
+        dayAgo.setHours(dayAgo.getHours() - 24);
+        
+        const completedYesterday = tasks.filter(t => {
+          if (t.status !== 'done' || !t.updated_at) return false;
+          const updated = new Date(t.updated_at);
+          return updated >= yesterday && updated < today;
+        });
+        
+        const dueToday = tasks.filter(t => {
+          if (t.status === 'done' || !t.due_date) return false;
+          const due = new Date(t.due_date);
+          due.setHours(0, 0, 0, 0);
+          return due.getTime() === today.getTime();
+        });
+        
+        const overdue = tasks.filter(t => {
+          if (t.status === 'done' || !t.due_date) return false;
+          const due = new Date(t.due_date);
+          due.setHours(0, 0, 0, 0);
+          return due < today;
+        }).sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+        
+        const newThisWeek = tasks.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= weekAgo;
+        });
+        
+        const newToday = tasks.filter(t => {
+          if (!t.created_at) return false;
+          const created = new Date(t.created_at);
+          return created >= dayAgo;
+        });
+        
+        // Build activity summary
+        const activityMap = new Map();
+        tasks.forEach(t => {
+          if (t.activity && t.activity.length > 0) {
+            t.activity.forEach(a => {
+              const key = `${a.by}-${a.note}-${a.created_at}`;
+              if (!activityMap.has(key)) {
+                activityMap.set(key, { ...a, task: t });
+              }
+            });
+          }
+        });
+        const recentActivity = Array.from(activityMap.values())
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 10);
+        
+        setDigestData({
+          completedYesterday,
+          dueToday,
+          overdue,
+          newThisWeek,
+          newToday,
+          recentActivity,
+          stats: {
+            completedYesterday: completedYesterday.length,
+            dueToday: dueToday.length,
+            overdue: overdue.length,
+            newThisWeek: newThisWeek.length
+          }
+        });
+        setLoading(false);
+      }, [tasks]);
+      
+      if (loading) return <div className="loading">Loading digest...</div>;
+      
+      const { stats, completedYesterday, dueToday, overdue, newToday, recentActivity } = digestData;
+      
+      return (
+        <div className="digest-container">
+          <div className="digest-header">
+            <h2>📊 Daily Digest</h2>
+            <p>Your task summary at a glance • {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+          </div>
+          
+          <div className="stat-cards">
+            <div className="stat-card">
+              <div className="stat-card-icon">✅</div>
+              <div className="stat-card-value" style={{color: 'var(--normal)'}}>{stats.completedYesterday}</div>
+              <div className="stat-card-label">Completed Yesterday</div>
+            </div>
+            <div className="stat-card due-today-card">
+              <div className="stat-card-icon">📅</div>
+              <div className="stat-card-value" style={{color: 'var(--high)'}}>{stats.dueToday}</div>
+              <div className="stat-card-label">Due Today</div>
+            </div>
+            <div className="stat-card overdue-card">
+              <div className="stat-card-icon">🔴</div>
+              <div className="stat-card-value" style={{color: 'var(--urgent)'}}>{stats.overdue}</div>
+              <div className="stat-card-label">Overdue</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon">🆕</div>
+              <div className="stat-card-value" style={{color: 'var(--accent)'}}>{stats.newThisWeek}</div>
+              <div className="stat-card-label">New This Week</div>
+            </div>
+          </div>
+          
+          {overdue.length > 0 && (
+            <div className="digest-section">
+              <div className="digest-section-title" style={{color: 'var(--urgent)'}}>
+                🔴 Overdue Tasks <span style={{fontSize: 13, color: 'var(--text-muted)', marginLeft: 8}}>({overdue.length})</span>
+              </div>
+              <div className="digest-task-list">
+                {overdue.map(task => (
+                  <div key={task.id} className="digest-task-item overdue">
+                    <span className={`task-tag tag-${task.project}`}>{task.project}</span>
+                    <span className="digest-task-title">{task.title}</span>
+                    <div className="digest-task-meta">
+                      <DueBadge due_date={task.due_date} />
+                      <span className={`task-assignee assignee-${task.assignee}`} style={{width: 24, height: 24, fontSize: 10}}>
+                        {task.assignee === 'bom' ? 'B' : 'A'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div className={`digest-section ${dueToday.length === 0 ? 'count-0' : ''}`}>
+            <div className="digest-section-title" style={{color: dueToday.length > 0 ? 'var(--high)' : 'var(--text-muted)'}}>
+              📅 Due Today <span style={{fontSize: 13, color: 'var(--text-muted)', marginLeft: 8}}>({dueToday.length})</span>
+            </div>
+            {dueToday.length > 0 ? (
+              <div className="digest-task-list">
+                {dueToday.map(task => (
+                  <div key={task.id} className="digest-task-item today">
+                    <span className={`task-tag tag-${task.project}`}>{task.project}</span>
+                    <span className="digest-task-title">{task.title}</span>
+                    <div className="digest-task-meta">
+                      <span style={{background: 'rgba(245,158,11,0.15)', color: 'var(--high)', fontSize: 11, padding: '2px 8px', borderRadius: 4, fontWeight: 500}}>Today</span>
+                      <span className={`task-assignee assignee-${task.assignee}`} style={{width: 24, height: 24, fontSize: 10}}>
+                        {task.assignee === 'bom' ? 'B' : 'A'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="digest-empty">No tasks due today 🎉</div>
+            )}
+          </div>
+          
+          <div className={`digest-section ${completedYesterday.length === 0 ? 'count-0' : ''}`}>
+            <div className="digest-section-title">
+              ✅ Completed Yesterday <span style={{fontSize: 13, color: 'var(--text-muted)', marginLeft: 8}}>({completedYesterday.length})</span>
+            </div>
+            {completedYesterday.length > 0 ? (
+              <div className="digest-task-list">
+                {completedYesterday.map(task => (
+                  <div key={task.id} className="digest-task-item">
+                    <span className={`task-tag tag-${task.project}`}>{task.project}</span>
+                    <span className="digest-task-title" style={{textDecoration: 'line-through', opacity: 0.7}}>{task.title}</span>
+                    <div className="digest-task-meta">
+                      <span style={{color: 'var(--normal)'}}>✓ Done</span>
+                      <span className={`task-assignee assignee-${task.assignee}`} style={{width: 24, height: 24, fontSize: 10}}>
+                        {task.assignee === 'bom' ? 'B' : 'A'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="digest-empty">No tasks completed yesterday</div>
+            )}
+          </div>
+          
+          <div className={`digest-section ${newToday.length === 0 ? 'count-0' : ''}`}>
+            <div className="digest-section-title">
+              🆕 New in Last 24h <span style={{fontSize: 13, color: 'var(--text-muted)', marginLeft: 8}}>({newToday.length})</span>
+            </div>
+            {newToday.length > 0 ? (
+              <div className="digest-task-list">
+                {newToday.map(task => (
+                  <div key={task.id} className="digest-task-item">
+                    <span className={`task-tag tag-${task.project}`}>{task.project}</span>
+                    <span className="digest-task-title">{task.title}</span>
+                    <div className="digest-task-meta">
+                      <span>{formatRelativeDateTime(task.created_at)}</span>
+                      <span className={`task-assignee assignee-${task.assignee}`} style={{width: 24, height: 24, fontSize: 10}}>
+                        {task.assignee === 'bom' ? 'B' : 'A'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="digest-empty">No new tasks created</div>
+            )}
+          </div>
+          
+          {recentActivity.length > 0 && (
+            <div className="digest-section">
+              <div className="digest-section-title">
+                👥 Recent Team Activity
+              </div>
+              <div className="team-activity">
+                {recentActivity.map((activity, idx) => (
+                  <div key={idx} className="activity-row">
+                    <div className={`activity-avatar ${activity.by}`}>
+                      {activity.by === 'bom' ? 'B' : 'A'}
+                    </div>
+                    <div className="activity-content">
+                      <strong>{activity.by === 'bom' ? 'Bom' : 'Alice'}</strong> {activity.note}
+                      {activity.task && <span style={{color: 'var(--text-muted)'}}> on "{activity.task.title.slice(0, 40)}{activity.task.title.length > 40 ? '...' : ''}"</span>}
+                    </div>
+                    <div className="activity-time">{formatRelativeDateTime(activity.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    function BrainPanel({ externalDoc, onDocsLoaded, onDocSelect }) {
       const [docs, setDocs] = useState([]);
       const [selected, setSelected] = useState(null);
       const [content, setContent] = useState('');
       const [loading, setLoading] = useState(true);
+      const [docLinks, setDocLinks] = useState({});
+
       useEffect(() => {
-        fetch('/api/brain/documents').then(r => r.json()).then(d => { setDocs(d); setLoading(false); });
+        Promise.all([
+          fetch('/api/brain/documents').then(r => r.json()),
+          fetch('/api/task-documents').then(r => r.json())
+        ]).then(([docsData, linksData]) => {
+          setDocs(docsData);
+          setDocLinks(linksData);
+          setLoading(false);
+          onDocsLoaded && onDocsLoaded(docsData);
+        });
       }, []);
+
+      // Handle external document selection (from task panel)
+      useEffect(() => {
+        if (externalDoc) {
+          loadDoc(externalDoc);
+          onDocSelect && onDocSelect();
+        }
+      }, [externalDoc]);
+
       const loadDoc = async (doc) => {
         const typePath = doc.path.split('/')[0];
         const res = await fetch(`/api/brain/documents/${typePath}/${doc.slug}`);
         const data = await res.json();
         setContent(data.content); setSelected(doc);
       };
+
       if (loading) return <div className="loading">Loading brain...</div>;
+
       const grouped = docs.reduce((acc, d) => {
         const type = d.type || d.path.split('/')[0] || 'other';
         if (!acc[type]) acc[type] = [];
         acc[type].push(d);
         return acc;
       }, {});
+
       if (selected) {
+        const links = docLinks[selected.path];
         return (
           <div style={{padding: 24, maxWidth: 800, margin: '0 auto'}}>
             <button onClick={() => setSelected(null)} style={{background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text)', padding: '8px 16px', borderRadius: 6, cursor: 'pointer', marginBottom: 16}}>← Back</button>
             <div style={{background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 24}}>
               <h2 style={{marginBottom: 8}}>{selected.title || selected.slug}</h2>
-              <div style={{color: 'var(--text-muted)', fontSize: 13, marginBottom: 16}}>{selected.date} • {selected.wordCount} words</div>
+              <div style={{color: 'var(--text-muted)', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
+                <span>{selected.date} • {selected.wordCount} words</span>
+                {links && links.count > 0 && (
+                  <span style={{
+                    background: 'var(--accent)', color: 'white', padding: '2px 8px',
+                    borderRadius: 12, fontSize: 11, fontWeight: 600
+                  }}>
+                    🔗 {links.count} linked task{links.count > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              {links && links.count > 0 && (
+                <div style={{marginBottom: 16, padding: 12, background: 'var(--bg)', borderRadius: 8}}>
+                  <div style={{fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase'}}>Linked Tasks</div>
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: 6}}>
+                    {links.tasks.map(t => (
+                      <span key={t.id} style={{
+                        fontSize: 12, background: 'var(--bg-surface)', padding: '3px 10px',
+                        borderRadius: 4, border: '1px solid var(--border)'
+                      }}>
+                        {t.title}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <pre style={{whiteSpace: 'pre-wrap', fontFamily: 'Inter, sans-serif', fontSize: 14, lineHeight: 1.7, color: 'var(--text)'}}>{content.replace(/^---[\s\S]*?---\n/, '')}</pre>
             </div>
           </div>
         );
       }
+
       return (
         <div style={{padding: 24, maxWidth: 900, margin: '0 auto'}}>
           <h2 style={{marginBottom: 24, fontSize: 20}}>🧠 Second Brain</h2>
@@ -763,16 +1292,29 @@
             <div key={type} style={{marginBottom: 24}}>
               <h3 style={{fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 12}}>{type}</h3>
               <div style={{display: 'grid', gap: 12}}>
-                {typeDocs.map(doc => (
-                  <div key={doc.path} onClick={() => loadDoc(doc)} style={{
-                    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10,
-                    padding: 16, cursor: 'pointer', transition: 'border-color 0.2s'
-                  }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-                    <div style={{fontWeight: 500, marginBottom: 4}}>{doc.title || doc.slug}</div>
-                    <div style={{fontSize: 12, color: 'var(--text-muted)'}}>{doc.date} • {doc.wordCount} words</div>
-                    <div style={{fontSize: 13, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5}}>{doc.preview?.slice(0, 150)}...</div>
-                  </div>
-                ))}
+                {typeDocs.map(doc => {
+                  const links = docLinks[doc.path];
+                  return (
+                    <div key={doc.path} onClick={() => loadDoc(doc)} style={{
+                      background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10,
+                      padding: 16, cursor: 'pointer', transition: 'border-color 0.2s'
+                    }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                        <span style={{fontWeight: 500}}>{doc.title || doc.slug}</span>
+                        {links && links.count > 0 && (
+                          <span style={{
+                            background: 'var(--accent)', color: 'white', padding: '1px 6px',
+                            borderRadius: 10, fontSize: 10, fontWeight: 600
+                          }}>
+                            {links.count}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{fontSize: 12, color: 'var(--text-muted)'}}>{doc.date} • {doc.wordCount} words</div>
+                      <div style={{fontSize: 13, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5}}>{doc.preview?.slice(0, 150)}...</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -821,6 +1363,8 @@
       const [quickAddColumn, setQuickAddColumn] = useState(null);
       const [searchQuery, setSearchQuery] = useState('');
       const [mobileColumn, setMobileColumn] = useState('todo');
+      const [allDocs, setAllDocs] = useState([]);
+      const [selectedDoc, setSelectedDoc] = useState(null);
       const searchRef = useRef(null);
       
       const fetchData = useCallback(async () => {
@@ -899,7 +1443,20 @@
         });
         await fetchData();
       };
-      
+
+      const handleOpenDocument = (doc) => {
+        setSelectedDoc(doc);
+        setView('brain');
+      };
+
+      const handleDocsLoaded = (docs) => {
+        setAllDocs(docs);
+      };
+
+      const handleDocSelected = () => {
+        setSelectedDoc(null); // Clear after navigation
+      };
+
       const projectFiltered = filter === 'all' ? tasks : tasks.filter(t => t.project === filter);
       const query = searchQuery.toLowerCase().trim();
       const filteredTasks = query
@@ -947,7 +1504,7 @@
             </div>
             <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
               <div style={{display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 8, padding: 3}}>
-                {[{id:'board',label:'📋 Board'},{id:'archive',label:'📦 Archive'},{id:'team',label:'👥 Team'},{id:'brain',label:'🧠 Brain'}].map(tab => (
+                {[{id:'board',label:'📋 Board'},{id:'digest',label:'📊 Digest'},{id:'archive',label:'📦 Archive'},{id:'team',label:'👥 Team'},{id:'brain',label:'🧠 Brain'}].map(tab => (
                   <button key={tab.id} onClick={() => setView(tab.id)} style={{
                     background: view === tab.id ? 'var(--accent)' : 'transparent',
                     border: 'none', color: 'var(--text)', padding: '6px 14px', borderRadius: 6,
@@ -977,8 +1534,9 @@
           </header>
           
           {view === 'team' && <TeamPanel />}
-          {view === 'brain' && <BrainPanel />}
+          {view === 'brain' && <BrainPanel externalDoc={selectedDoc} onDocsLoaded={handleDocsLoaded} onDocSelect={handleDocSelected} />}
           {view === 'archive' && <ArchivePanel />}
+          {view === 'digest' && <DigestPanel tasks={tasks} />}
           {view === 'board' && <>
             <div className="filters">
               <span style={{color: 'var(--text-muted)', fontSize: 14}}>Filter:</span>
@@ -1008,12 +1566,14 @@
                   </div>
                   <div className="column-body" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, column.id)}>
                     {tasksByColumn[column.id]?.map(task => (
-                      <TaskCard 
+                      <TaskCard
                         key={task.id} task={task}
                         onDragStart={handleDragStart}
                         onArchive={() => handleArchiveTask(task.id)}
                         onMoveTask={handleMoveTask}
                         fetchData={fetchData}
+                        onOpenDocument={handleOpenDocument}
+                        allDocs={allDocs}
                       />
                     ))}
                     {quickAddColumn === column.id
